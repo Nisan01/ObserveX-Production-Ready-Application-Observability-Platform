@@ -1,0 +1,82 @@
+services:
+  frontend:
+    container_name: observex-frontend
+    build:
+      context: ./app/frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:80"
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  backend:
+    container_name: observex-backend
+    build:
+      context: ./app/backend
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      DB_HOST: mysql
+      DB_PORT: "3306"
+      DB_USER: root
+      DB_PASSWORD: observex_password
+      DB_NAME: observex
+      ERROR_RATE: "0.2"
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  mysql:
+    container_name: observex-mysql
+    image: mysql:8.0
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: observex_password
+      MYSQL_DATABASE: observex
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-pobservex_password"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  prometheus:
+    container_name: prometheus
+    image: prom/prometheus:latest
+    ports:
+     - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    depends_on:
+      - node-exporter
+  
+  node-exporter:
+    container_name: node_exporter
+    image: prom/node-exporter:latest
+    ports:
+     - "9100:9100"
+    
+
+
+  loadtest:
+    container_name: observex-loadtest
+    build:
+      context: ./app/backend
+      dockerfile: Dockerfile
+    command: ["node", "src/loadtest.js"]
+    environment:
+      API_URL: http://backend:3001
+    depends_on:
+      - backend
+    restart: "on-failure"
+    profiles:
+      - loadtest
+
+volumes:
+  mysql_data:
